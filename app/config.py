@@ -10,8 +10,10 @@ class Settings(BaseSettings):
     download_concurrency: int = 2
     rate_limit_count: int = 8
     rate_limit_window_seconds: int = 60
-    force_sub_channel: str = ""
-    force_sub_join_url: str = ""
+    # Waleed Zone is enabled as the default forced-subscription channel.
+    # Override either value from environment variables if needed.
+    force_sub_channel: str = "-1002064613866"
+    force_sub_join_url: str = "https://t.me/Waleed_zone"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
