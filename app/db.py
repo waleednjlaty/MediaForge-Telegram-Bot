@@ -91,6 +91,30 @@ class Database:
             active = (await (await db.execute("SELECT COUNT(DISTINCT user_id) FROM events WHERE created_at>?", (now-86400,))).fetchone())[0]
         return users, downloads, active
 
+    async def recent_users(self, limit: int = 25):
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                """
+                SELECT user_id, username, first_name, joined_at, referred_by, downloads
+                FROM users
+                ORDER BY joined_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return await cur.fetchall()
+
+    async def export_users(self):
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                """
+                SELECT user_id, username, first_name, joined_at, referred_by, downloads
+                FROM users
+                ORDER BY joined_at ASC
+                """
+            )
+            return await cur.fetchall()
+
     async def all_user_ids(self) -> list[int]:
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute("SELECT user_id FROM users")
