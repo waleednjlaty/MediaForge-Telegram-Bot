@@ -1,23 +1,26 @@
 import asyncio
+import csv
+import io
 import logging
+from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, Message, BufferedInputFile
+from aiogram.types import BotCommand, BufferedInputFile, CallbackQuery, FSInputFile, Message
 
 from .config import Settings
 from .db import Database
 from .downloader import MediaDownloader
 from .keyboards import download_keyboard, join_keyboard
 from .limiter import RateLimiter
+from .referral import parse_ref
 from .subscription import is_subscribed
 from .utils import cache_key, extract_url, human_size, is_safe_supported_url
-from .referral import parse_ref
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -71,6 +74,10 @@ def promo_footer() -> str:
     return "\n".join(parts)
 
 
+def is_admin(user_id: int) -> bool:
+    return bool(app and user_id in app.s.admins)
+
+
 @router.message(CommandStart())
 async def start(m: Message):
     referred_by = parse_ref(m.text)
@@ -109,17 +116,68 @@ async def check_sub(cb: CallbackQuery):
         await cb.answer("لسه ما ظهر اشتراكك. إذا كنت مشترك، تأكد أن البوت Admin بالقناة.", show_alert=True)
 
 
+# Hidden admin-only commands. They are intentionally NOT registered in Telegram's command menu.
 @router.message(Command("stats"))
 async def stats_cmd(m: Message):
-    if m.from_user.id not in app.s.admins:
+    if not is_admin(m.from_user.id):
         return
     users, downloads, active = await app.db.stats()
-    await m.answer(f"👥 المستخدمون: {users}\n⬇️ التنزيلات: {downloads}\n⚡ نشط 24 ساعة: {active}")
+    await m.answer(
+        "📊 <b>إحصائيات البوت</b>\n\n"
+        f"👥 إجمالي المستخدمين: <b>{users}</b>\n"
+        f"⬇️ إجمالي التنزيلات: <b>{downloads}</b>\n"
+        f"⚡ النشطون آخر 24 ساعة: <b>{active}</b>"
+    )
+
+
+@router.message(Command("users"))
+async def users_cmd(m: Message):
+    if not is_admin(m.from_user.id):
+        return
+
+    total, _, _ = await app.db.stats()
+    rows = await app.db.recent_users(25)
+    lines = [f"👥 <b>إجمالي المستخدمين: {total}</b>", "", "🆕 آخر 25 مستخدم:"]
+
+    if not rows:
+        lines.append("لا يوجد مستخدمون بعد.")
+    else:
+        for index, row in enumerate(rows, start=1):
+            user_id, username, first_name, joined_at, referred_by, downloads = row
+            identity = f"@{escape(username)}" if username else escape(first_name or "بدون اسم")
+            joined = datetime.fromtimestamp(joined_at, tz=timezone.utc).strftime("%Y-%m-%d")
+            referral = f" | ref: <code>{referred_by}</code>" if referred_by else ""
+            lines.append(
+                f"{index}. {identity} | <code>{user_id}</code> | ⬇️ {downloads} | {joined}{referral}"
+            )
+
+    await m.answer("\n".join(lines))
+
+
+@router.message(Command("export_users"))
+async def export_users_cmd(m: Message):
+    if not is_admin(m.from_user.id):
+        return
+
+    rows = await app.db.export_users()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["user_id", "username", "first_name", "joined_at_utc", "referred_by", "downloads"])
+    for user_id, username, first_name, joined_at, referred_by, downloads in rows:
+        joined = datetime.fromtimestamp(joined_at, tz=timezone.utc).isoformat()
+        writer.writerow([user_id, username or "", first_name or "", joined, referred_by or "", downloads])
+
+    data = output.getvalue().encode("utf-8-sig")
+    filename = f"mediaforge_users_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    await m.answer_document(
+        BufferedInputFile(data, filename=filename),
+        caption=f"👥 إجمالي المستخدمين: {len(rows)}\n🔒 ملف خاص بالأدمن.",
+    )
 
 
 @router.message(Command("broadcast"))
 async def broadcast(m: Message):
-    if m.from_user.id not in app.s.admins:
+    if not is_admin(m.from_user.id):
         return
     text = m.text.partition(" ")[2].strip()
     if not text:
@@ -287,6 +345,13 @@ async def configure_bot_profile(bot: Bot) -> None:
             "أرسل رابطًا عامًا من تيك توك أو إنستغرام أو يوتيوب أو فيسبوك أو X ثم اختر فيديو أو MP3 أو الصورة المصغرة أو معلومات المقطع.",
             language_code="ar",
         )
+        # Only public commands are shown in Telegram's command menu.
+        # Admin commands (/stats, /users, /export_users, /broadcast) remain hidden.
+        await bot.set_my_commands([
+            BotCommand(command="start", description="تشغيل البوت"),
+            BotCommand(command="help", description="طريقة الاستخدام"),
+            BotCommand(command="invite", description="رابط دعوتك"),
+        ])
     except Exception:
         logger.warning("Could not update Telegram bot profile automatically", exc_info=True)
 
