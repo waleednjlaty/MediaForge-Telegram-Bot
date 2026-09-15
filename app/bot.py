@@ -32,11 +32,21 @@ class App:
         self.bot: Bot | None = None
         self.username = ""
 
-    async def require_access(self, user_id: int, message_or_cb) -> bool:
+    async def has_access(self, user_id: int) -> bool:
+        # Bot admins must never get stuck behind forced subscription.
+        if user_id in self.s.admins:
+            return True
         if not self.s.force_sub_channel:
             return True
-        ok = await is_subscribed(self.bot, user_id, self.s.force_sub_channel)
-        if ok:
+        return await is_subscribed(
+            self.bot,
+            user_id,
+            self.s.force_sub_channel,
+            self.s.force_sub_join_url,
+        )
+
+    async def require_access(self, user_id: int, message_or_cb) -> bool:
+        if await self.has_access(user_id):
             return True
         text = "🔒 لاستخدام البوت اشترك بالقناة ثم اضغط «تحقّق»."
         kb = join_keyboard(self.s.force_sub_join_url or f"https://t.me/{self.s.force_sub_channel.lstrip('@')}")
@@ -79,11 +89,11 @@ async def invite(m: Message):
 
 @router.callback_query(F.data == "check_sub")
 async def check_sub(cb: CallbackQuery):
-    if await is_subscribed(app.bot, cb.from_user.id, app.s.force_sub_channel):
+    if await app.has_access(cb.from_user.id):
         await cb.answer("تم ✅", show_alert=True)
         await cb.message.answer("✅ صار بإمكانك استخدام البوت. أرسل رابطًا.")
     else:
-        await cb.answer("لسه ما ظهر اشتراكك.", show_alert=True)
+        await cb.answer("لسه ما ظهر اشتراكك. إذا كنت مشترك، تأكد أن البوت Admin بالقناة.", show_alert=True)
 
 
 @router.message(Command("stats"))
