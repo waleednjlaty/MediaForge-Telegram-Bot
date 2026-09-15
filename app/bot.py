@@ -33,7 +33,6 @@ class App:
         self.username = ""
 
     async def has_access(self, user_id: int) -> bool:
-        # Bot admins must never get stuck behind forced subscription.
         if user_id in self.s.admins:
             return True
         if not self.s.force_sub_channel:
@@ -55,6 +54,7 @@ class App:
         else:
             await message_or_cb.message.answer(text, reply_markup=kb)
         return False
+
 
 app: App | None = None
 
@@ -249,6 +249,28 @@ async def download_cb(cb: CallbackQuery):
             app.downloader.cleanup(result.path)
 
 
+async def configure_bot_profile(bot: Bot) -> None:
+    try:
+        await bot.set_my_name("Video Downloader • TikTok Instagram YouTube")
+        await bot.set_my_name("تحميل فيديوهات • تيك توك إنستغرام يوتيوب", language_code="ar")
+        await bot.set_my_short_description(
+            "Download public videos and MP3 from TikTok, Instagram, YouTube and more."
+        )
+        await bot.set_my_short_description(
+            "تحميل الفيديوهات وMP3 من تيك توك وإنستغرام ويوتيوب ومنصات أخرى.",
+            language_code="ar",
+        )
+        await bot.set_my_description(
+            "Send a public TikTok, Instagram, YouTube, Facebook, X or other supported link and choose video, MP3, thumbnail or media info."
+        )
+        await bot.set_my_description(
+            "أرسل رابطًا عامًا من تيك توك أو إنستغرام أو يوتيوب أو فيسبوك أو X ثم اختر فيديو أو MP3 أو الصورة المصغرة أو معلومات المقطع.",
+            language_code="ar",
+        )
+    except Exception:
+        logger.warning("Could not update Telegram bot profile automatically", exc_info=True)
+
+
 async def build_bot(settings: Settings) -> tuple[Bot, Dispatcher]:
     global app
     settings.ensure_dirs()
@@ -256,6 +278,7 @@ async def build_bot(settings: Settings) -> tuple[Bot, Dispatcher]:
     await app.db.init()
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     app.bot = bot
+    await configure_bot_profile(bot)
     app.username = (await bot.get_me()).username or ""
     dp = Dispatcher()
     dp.include_router(router)
