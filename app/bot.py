@@ -59,6 +59,18 @@ class App:
 app: App | None = None
 
 
+def promo_footer() -> str:
+    username = app.username if app else ""
+    bot_link = f"https://t.me/{username}" if username else ""
+    parts = [
+        "🎮 بدك تحمّل تطبيقات وألعاب؟",
+        "📢 @Waleed_zone",
+    ]
+    if bot_link:
+        parts.append(f"🤖 رابط البوت: {bot_link}")
+    return "\n".join(parts)
+
+
 @router.message(CommandStart())
 async def start(m: Message):
     referred_by = parse_ref(m.text)
@@ -70,7 +82,8 @@ async def start(m: Message):
         "نزّل محتوى عام من أشهر منصات السوشال ميديا مباشرة من تيليجرام.\n\n"
         "يدعم: YouTube • TikTok • Instagram • Facebook • X • Reddit • Pinterest • SoundCloud • Twitch وغيرها.\n\n"
         "📎 أرسل الرابط فقط، ثم اختر فيديو أو MP3 أو معلومات المقطع.\n\n"
-        "<i>استخدم البوت فقط للمحتوى الذي يحق لك تنزيله. لا يدعم المحتوى الخاص أو المحمي بـ DRM.</i>"
+        "<i>استخدم البوت فقط للمحتوى الذي يحق لك تنزيله. لا يدعم المحتوى الخاص أو المحمي بـ DRM.</i>\n\n"
+        f"{promo_footer()}"
     )
 
 
@@ -146,7 +159,7 @@ async def send_cached(cb: CallbackQuery, row) -> bool:
     if not row:
         return False
     file_id, media_type, title = row
-    caption = f"✅ {escape(title or 'جاهز')}"
+    caption = f"✅ {escape(title or 'جاهز')}\n\n{promo_footer()}"
     try:
         if media_type == "audio":
             await cb.message.answer_audio(file_id, caption=caption)
@@ -185,7 +198,8 @@ async def download_cb(cb: CallbackQuery):
                 f"👤 {escape(str(info.get('uploader') or info.get('channel') or 'غير معروف'))}\n"
                 f"⏱ {info.get('duration') or '؟'} ثانية\n"
                 f"👁 {info.get('view_count') or '؟'}\n"
-                f"📦 {human_size(info.get('filesize') or info.get('filesize_approx'))}"
+                f"📦 {human_size(info.get('filesize') or info.get('filesize_approx'))}\n\n"
+                f"{promo_footer()}"
             )
             await status.edit_text(text)
         except Exception:
@@ -207,7 +221,10 @@ async def download_cb(cb: CallbackQuery):
                     data = await r.read()
                     if len(data) > 10 * 1024 * 1024:
                         raise RuntimeError("thumbnail too large")
-            await cb.message.answer_photo(BufferedInputFile(data, filename="thumbnail.jpg"))
+            await cb.message.answer_photo(
+                BufferedInputFile(data, filename="thumbnail.jpg"),
+                caption=promo_footer(),
+            )
             await status.delete()
         except Exception:
             await status.edit_text("❌ ما لقيت صورة للمحتوى.")
@@ -230,7 +247,10 @@ async def download_cb(cb: CallbackQuery):
         if size > app.s.max_file_mb * 1024 * 1024:
             await status.edit_text(f"⚠️ الملف حجمه {human_size(size)} وأكبر من الحد المضبوط للبوت ({app.s.max_file_mb} MB). جرّب MP3 أو مقطع أصغر.")
             return
-        caption = f"✅ <b>{escape(result.title[:180])}</b>\n⚡ @{app.username}"
+        caption = (
+            f"✅ <b>{escape(result.title[:180])}</b>\n\n"
+            f"{promo_footer()}"
+        )
         file = FSInputFile(result.path)
         if mode == "audio":
             sent = await cb.message.answer_audio(file, caption=caption, title=result.title[:64])
